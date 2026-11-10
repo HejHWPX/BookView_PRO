@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>디지털 독서 뷰어</title>
+    <style>
+        :root {
+            --bg-color: #f4f5f7;
+            --text-color: #333333;
+            --primary-color: #2c3e50;
+            --shadow-color: rgba(0, 0, 0, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        /* 공통 헤더 및 안내 문구 */
+        header {
+            margin: 30px 0 20px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            color: var(--primary-color);
+            margin-bottom: 8px;
+        }
+
+        /* 1. 책 목록 화면 (셀렉션 뷰) */
+        #book-selector {
+            width: 100%;
+            max-width: 1000px;
+            padding: 0 20px 40px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 24px;
+            justify-items: center;
+        }
+
+        .book-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px var(--shadow-color);
+            cursor: pointer;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+            max-width: 160px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .book-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .book-card img {
+            width: 100%;
+            aspect-ratio: 1 / 1.414; /* A4 비율 */
+            object-fit: cover;
+            background-color: #e0e0e0;
+        }
+
+        .book-card-title {
+            padding: 10px;
+            font-size: 0.9rem;
+            text-align: center;
+            font-weight: bold;
+            color: #555;
+        }
+
+        /* 2. 로딩 화면 */
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            display: none;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #ddd;
+            border-top: 5px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 3. 독서 뷰어 화면 */
+        #viewer-container {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            display: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 뷰어 상단 컨트롤러 (페이지 정보 및 확대/축소, 홈 버튼) */
+        .viewer-header {
+            height: 60px;
+            background: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 10;
+        }
+
+        .viewer-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        button.control-btn {
+            padding: 6px 12px;
+            border: 1px solid #ccc;
+            background: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+
+        button.control-btn:hover {
+            background: #f0f0f0;
+        }
+
+        /* 책 읽는 메인 스테이지 */
+        .viewer-stage {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: auto;
+            background-color: #2b2b2b;
+            padding: 20px;
+        }
+
+        /* 책 페이지 및 입체 그라데이션 컨테이너 */
+        .book-stage-inner {
+            position: relative;
+            max-width: 90vw;
+            max-height: 80vh;
+            transition: transform 0.3s ease;
+            transform-origin: center center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            background: #fff;
+            display: flex;
+        }
+
+        .page-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+        }
+
+        .page-wrapper img {
+            display: block;
+            max-height: 75vh;
+            width: auto;
+            object-fit: contain;
+            background: white;
+        }
+
+        /* 진짜 책처럼 보이게 만드는 중앙 제본선 그라데이션 효과 */
+        .book-binding-shadow {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            pointer-events: none;
+            background: linear-gradient(
+                90deg, 
+                rgba(0,0,0,0.25) 0%, 
+                rgba(0,0,0,0.03) 2%, 
+                rgba(255,255,255,0.1) 4%, 
+                rgba(0,0,0,0) 10%, 
+                rgba(0,0,0,0) 90%, 
+                rgba(255,255,255,0.1) 96%, 
+                rgba(0,0,0,0.03) 98%, 
+                rgba(0,0,0,0.25) 100%
+            );
+        }
+
+        /* 양옆 모서리 클릭 오버레이 영역 (다음/이전 페이지) */
+        .edge-click {
+            position: absolute;
+            top: 0;
+            width: 25%;
+            height: 100%;
+            z-index: 5;
+            cursor: pointer;
+        }
+        .edge-left { left: 0; }
+        .edge-right { right: 0; }
+
+        /* 모서리 호버 가이드 효과 */
+        .edge-left:hover {
+            background: linear-gradient(90deg, rgba(0,0,0,0.08), transparent);
+        }
+        .edge-right:hover {
+            background: linear-gradient(270deg, rgba(0,0,0,0.08), transparent);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 책 선택 화면 -->
+    <div id="selection-view">
+        <header>
+            <h1>보실 설명서를 선택해주세요!</h1>
+            <p style="color: #666; font-size: 0.95rem;">총 6권의 책 중 하나를 선택하면 뷰어가 실행됩니다.</p>
+        </header>
+        <main id="book-selector">
+            <!-- 자바스크립트로 6개의 책 표지가 동적 생성됩니다 -->
+        </main>
+    </div>
+
+    <!-- 로딩 화면 -->
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <p style="font-weight: bold; color: #444;">책을 불러오는 중입니다...</p>
+    </div>
+
+    <!-- 독서 뷰어 화면 -->
+    <div id="viewer-container">
+        <div class="viewer-header">
+            <button class="control-btn" onclick="goHome()">🏠 홈으로</button>
+            <div id="page-indicator" style="font-weight: bold; font-size: 1rem;">1 / 10</div>
+            <div class="viewer-controls">
+                <button class="control-btn" onclick="zoomOut()">🔍-</button>
+                <span id="zoom-level" style="font-size: 0.9rem; min-width: 40px; text-align: center;">100%</span>
+                <button class="control-btn" onclick="zoomIn()">🔍+</button>
+            </div>
+        </div>
+        <div class="viewer-stage" id="viewer-stage">
+            <div class="book-stage-inner" id="book-stage-inner">
+                <div class="page-wrapper" id="page-wrapper">
+                    <img id="current-page-img" src="" alt="책 페이지">
+                    <div class="book-binding-shadow"></div>
+                </div>
+                <!-- 좌우 모서리 클릭 영역 -->
+                <div class="edge-click edge-left" onclick="prevPage()" title="이전 페이지"></div>
+                <div class="edge-click edge-right" onclick="nextPage()" title="다음 페이지"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 설정 정보 (총 6권, 각 책별 총 페이지 수 정의)
+        // book_1은 예시로 총 5페이지가 있다고 가정 (book_1_cover.png, book_1_1.png ~ book_1_4.png 또는 파일명 규칙에 맞게 조절)
+        const booksConfig = [
+            { id: 1, title: "설명서 책 1", totalPages: 5 }, // 표지 포함 총 페이지수
+            { id: 2, title: "설명서 책 2", totalPages: 5 },
+            { id: 3, title: "설명서 책 3", totalPages: 5 },
+            { id: 4, title: "설명서 책 4", totalPages: 5 },
+            { id: 5, title: "설명서 책 5", totalPages: 5 },
+            { id: 6, title: "설명서 책 6", totalPages: 5 },
+        ];
+
+        let currentBookId = null;
+        let currentPageIndex = 0; // 0은 표지, 1부터는 본문 페이지
+        let currentTotalPages = 0;
+        let currentZoom = 1;
+
+        // 초기 책 목록 렌더링
+        function initBookSelector() {
+            const selector = document.getElementById('book-selector');
+            selector.innerHTML = '';
+
+            booksConfig.forEach(book => {
+                const card = document.createElement('div');
+                card.className = 'book-card';
+                card.onclick = () => loadBook(book.id);
+
+                // 표지 이미지 경로 규칙: book_X/book_cover_X.png 또는 요구사항에 맞춘 경로
+                // 여기서는 폴더 구조 book_1/book_cover_1.png 로 설정
+                card.innerHTML = `
+                    <img src="book_${book.id}/book_cover_${book.id}.png" alt="${book.title}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'140\' height=\'200\'><rect width=\'100%\' height=\'100%\' fill=\'%23eee\'/><text x=\'50%\' y=\'50%\' dominant-baseline=\'middle\' text-anchor=\'middle\' fill=\'%23aaa\' font-size=\'14\'>표지 없음</text></svg>'">
+                    <div class="book-card-title">${book.title}</div>
+                `;
+                selector.appendChild(card);
+            });
+        }
+
+        // 책 로드 함수
+        function loadBook(bookId) {
+            currentBookId = bookId;
+            const bookInfo = booksConfig.find(b => b.id === bookId);
+            currentTotalPages = bookInfo.totalPages;
+            currentPageIndex = 0; // 표지부터 시작
+            currentZoom = 1;
+            updateZoomStyle();
+
+            // 로딩 화면 표시
+            document.getElementById('loading-screen').style.display = 'flex';
+
+            // 첫 페이지 이미지 사전 로드 테스트
+            const testImg = new Image();
+            testImg.src = getPageImagePath(bookId, 0);
+            
+            testImg.onload = () => {
+                document.getElementById('loading-screen').style.display = 'none';
+                document.getElementById('selection-view').style.display = 'none';
+                document.getElementById('viewer-container').style.display = 'flex';
+                renderPage();
+            };
+
+            testImg.onerror = () => {
+                // 이미지가 없거나 경로가 틀려도 진입할 수 있도록 예외 처리
+                document.getElementById('loading-screen').style.display = 'none';
+                document.getElementById('selection-view').style.display = 'none';
+                document.getElementById('viewer-container').style.display = 'flex';
+                renderPage();
+            };
+        }
+
+        // 페이지 이미지 경로 생성 규칙
+        // 표지 (index 0): book_1/book_cover_1.png
+        // 본문 (index 1 이상): book_1/book_1_1.png, book_1_2.png ...
+        function getPageImagePath(bookId, pageIndex) {
+            if (pageIndex === 0) {
+                return `book_${bookId}/book_cover_${bookId}.png`;
+            } else {
+                return `book_${bookId}/book_${bookId}_${pageIndex}.png`;
+            }
+        }
+
+        // 현재 페이지 화면 렌더링
+        function renderPage() {
+            const imgElement = document.getElementById('current-page-img');
+            imgElement.src = getPageImagePath(currentBookId, currentPageIndex);
+            
+            // 상단 페이지 표시 갱신 (예: 1 / 5 장)
+            document.getElementById('page-indicatorinnerText', `${currentPageIndex + 1} / ${currentTotalPages} 장`);
+            document.getElementById('page-indicator').textContent = `${currentPageIndex + 1} / ${currentTotalPages} 장`;
+        }
+
+        // 다음 페이지로 이동
+        function nextPage() {
+            if (currentPageIndex < currentTotalPages - 1) {
+                currentPageIndex++;
+                renderPage();
+            }
+        }
+
+        // 이전 페이지로 이동
+        function prevPage() {
+            if (currentPageIndex > 0) {
+                currentPageIndex--;
+                renderPage();
+            }
+        }
+
+        // 확대 기능 (+)
+        function zoomIn() {
+            if (currentZoom < 2.5) {
+                currentZoom += 0.25;
+                updateZoomStyle();
+            }
+        }
+
+        // 축소 기능 (-)
+        function zoomOut() {
+            if (currentZoom > 0.75) {
+                currentZoom -= 0.25;
+                updateZoomStyle();
+            }
+        }
+
+        function updateZoomStyle() {
+            document.getElementById('book-stage-inner').style.transform = `scale(${currentZoom})`;
+            document.getElementById('zoom-level').textContent = `${Math.round(currentZoom * 100)}%`;
+        }
+
+        // 홈 화면으로 돌아가기
+        function goHome() {
+            document.getElementById('viewer-container').style.display = 'none';
+            document.getElementById('selection-view').style.display = 'block';
+            currentBookId = null;
+        }
+
+        // 키보드 좌우 방향키로도 페이지 넘김 지원
+        window.addEventListener('keydown', (e) => {
+            if (document.getElementById('viewer-container').style.display === 'flex') {
+                if (e.key === 'ArrowRight') {
+                    nextPage();
+                } else if (e.key === 'ArrowLeft') {
+                    prevPage();
+                }
+            }
+        });
+
+        // 초기 실행
+        window.onload = initBookSelector;
+    </script>
+</body>
+</html>
